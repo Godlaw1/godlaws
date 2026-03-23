@@ -1,6 +1,6 @@
 # Godlaws Foundation
 
-[![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](http://raspberrypi.tail4f5fff.ts.net:8800)
+[![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate?business=ca@godlaws.com&currency_code=EUR)
 
 Open source trading tools and financial technology for everyone.
 
@@ -26,13 +26,20 @@ Godlaws is a non-profit foundation dedicated to making professional-grade tradin
 
 Your donations help us build and maintain free, open source trading tools.
 
-[**Donate via PayPal**](http://raspberrypi.tail4f5fff.ts.net:8800)
+[**Donate via PayPal**](https://www.paypal.com/donate?business=ca@godlaws.com&currency_code=EUR)
 
 | Tier | Amount | What It Funds |
 |------|--------|---------------|
-| Supporter | $5–$25 | Server costs & infrastructure |
-| Backer | $50–$100 | New feature development |
-| Sponsor | $250+ | Priority features & recognition |
+| Backer | €100–€250 | Server costs & new features |
+| Sponsor | €500–€1,000 | Priority features & recognition |
+| Patron | €2,500+ | Direct roadmap input & co-development |
+
+### Crypto Donations
+
+| Currency | Address |
+|----------|---------|
+| Bitcoin | `bc1qys4lfrapadd7vwwnqfw4xjs043zxlnetzcp0kt` |
+| Solana | `Ed9eGHW7dfMrYRNYpvxDS7KRoKkfXCDm8Xj5zZ6XBuXH` |
 
 ## Get Involved
 
