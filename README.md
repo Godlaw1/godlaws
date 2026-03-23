@@ -1,5 +1,7 @@
 # Godlaws Foundation
 
+[![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](http://raspberrypi.tail4f5fff.ts.net:8800)
+
 Open source trading tools and financial technology for everyone.
 
 ## Mission
@@ -19,6 +21,18 @@ Godlaws is a non-profit foundation dedicated to making professional-grade tradin
 - **Strategy Frameworks** — Backtesting and optimization engines
 - **Multi-Broker Integration** — Connect to cTrader, MetaTrader, OANDA, Alpaca, Binance, IB, NinjaTrader
 - **Education** — Learn algorithmic trading through real, working code
+
+## Support Us
+
+Your donations help us build and maintain free, open source trading tools.
+
+[**Donate via PayPal**](http://raspberrypi.tail4f5fff.ts.net:8800)
+
+| Tier | Amount | What It Funds |
+|------|--------|---------------|
+| Supporter | $5–$25 | Server costs & infrastructure |
+| Backer | $50–$100 | New feature development |
+| Sponsor | $250+ | Priority features & recognition |
 
 ## Get Involved
 
