@@ -10,6 +10,10 @@ import logging
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
+import html
+import time
+from collections import defaultdict
+
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
@@ -25,8 +29,25 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 PAYPAL_CLIENT_ID = os.environ["PAYPAL_CLIENT_ID"]
 PAYPAL_CLIENT_SECRET = os.environ["PAYPAL_CLIENT_SECRET"]
 PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox")
+PAYPAL_WEBHOOK_ID = os.getenv("PAYPAL_WEBHOOK_ID", "")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8800")
 PORT = int(os.getenv("PORT", "8800"))
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+ALLOWED_CURRENCIES = {"USD", "EUR", "GBP"}
+MIN_DONATION = 100.00
+
+# ── Rate Limiting ────────────────────────────────────────────────────────────
+_rate_limits: dict = defaultdict(list)
+RATE_LIMIT_WINDOW = 300  # 5 minutes
+RATE_LIMIT_MAX = 10  # max requests per window
+
+
+def check_rate_limit(ip: str):
+    now = time.time()
+    _rate_limits[ip] = [t for t in _rate_limits[ip] if now - t < RATE_LIMIT_WINDOW]
+    if len(_rate_limits[ip]) >= RATE_LIMIT_MAX:
+        raise HTTPException(429, "Too many requests. Please try again later.")
+    _rate_limits[ip].append(now)
 
 PAYPAL_API = (
     "https://api-m.sandbox.paypal.com"
@@ -228,12 +249,12 @@ DONATE_PAGE = """<!DOCTYPE html>
 <div class="donate-card">
   <h2>Make a Donation</h2>
   <div class="amounts">
-    <button class="amount-btn" onclick="setAmount('5')">$5</button>
-    <button class="amount-btn" onclick="setAmount('10')">$10</button>
-    <button class="amount-btn" onclick="setAmount('25')">$25</button>
-    <button class="amount-btn" onclick="setAmount('50')">$50</button>
-    <button class="amount-btn" onclick="setAmount('100')">$100</button>
-    <button class="amount-btn" onclick="setAmount('250')">$250</button>
+    <button class="amount-btn" onclick="setAmount('100')">€100</button>
+    <button class="amount-btn" onclick="setAmount('250')">€250</button>
+    <button class="amount-btn" onclick="setAmount('500')">€500</button>
+    <button class="amount-btn" onclick="setAmount('1000')">€1,000</button>
+    <button class="amount-btn" onclick="setAmount('2500')">€2,500</button>
+    <button class="amount-btn" onclick="setAmount('5000')">€5,000</button>
   </div>
   <div class="row">
     <input type="number" class="custom-amount" id="amount" placeholder="Custom amount" min="1" step="0.01">
@@ -246,6 +267,28 @@ DONATE_PAGE = """<!DOCTYPE html>
   <br>
   <textarea class="message-input" id="message" rows="2" placeholder="Leave a message (optional)"></textarea>
   <button class="donate-btn" id="donateBtn" onclick="donate()">Donate with PayPal</button>
+</div>
+
+<div class="donate-card" style="margin-top: 24px;">
+  <h2>Donate with Crypto</h2>
+  <div style="margin-bottom: 16px;">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+      <span style="color:#f7931a; font-weight:700; min-width:70px;">Bitcoin</span>
+    </div>
+    <div style="background:#1a1a2e; border:2px solid #333; border-radius:10px; padding:12px; word-break:break-all; font-family:monospace; font-size:0.85rem; color:#ccc; cursor:pointer;" onclick="copyAddr(this, 'btc')" title="Click to copy">
+      bc1qys4lfrapadd7vwwnqfw4xjs043zxlnetzcp0kt
+    </div>
+    <small id="btc-copied" style="color:#0070ba; display:none;">Copied!</small>
+  </div>
+  <div>
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+      <span style="color:#9945ff; font-weight:700; min-width:70px;">Solana</span>
+    </div>
+    <div style="background:#1a1a2e; border:2px solid #333; border-radius:10px; padding:12px; word-break:break-all; font-family:monospace; font-size:0.85rem; color:#ccc; cursor:pointer;" onclick="copyAddr(this, 'sol')" title="Click to copy">
+      Ed9eGHW7dfMrYRNYpvxDS7KRoKkfXCDm8Xj5zZ6XBuXH
+    </div>
+    <small id="sol-copied" style="color:#0070ba; display:none;">Copied!</small>
+  </div>
 </div>
 
 <div class="stats" id="stats"></div>
@@ -314,6 +357,13 @@ async function loadStats() {
   } catch(e) {}
 }
 loadStats();
+
+function copyAddr(el, id) {
+  navigator.clipboard.writeText(el.textContent.trim());
+  const msg = document.getElementById(id + '-copied');
+  msg.style.display = 'inline';
+  setTimeout(() => msg.style.display = 'none', 2000);
+}
 </script>
 </body>
 </html>"""
@@ -391,16 +441,26 @@ async def home():
 
 @app.post("/api/donate")
 async def create_donation(request: Request):
+    check_rate_limit(request.client.host)
+
     body = await request.json()
     amount = body.get("amount", "").strip()
     currency = body.get("currency", "USD").upper()
-    message = body.get("message", "").strip()[:200]
+    message = html.escape(body.get("message", "").strip()[:200])
 
-    if not amount or float(amount) < 1:
-        raise HTTPException(400, "Amount must be at least 1")
+    if currency not in ALLOWED_CURRENCIES:
+        raise HTTPException(400, "Invalid currency")
+
+    try:
+        amount_f = float(amount)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid amount")
+
+    if amount_f < MIN_DONATION:
+        raise HTTPException(400, f"Minimum donation is €{MIN_DONATION:.0f}")
 
     # Format to 2 decimal places
-    amount = f"{float(amount):.2f}"
+    amount = f"{amount_f:.2f}"
 
     order = await create_paypal_order(amount, currency, message)
     order_id = order["id"]
@@ -498,12 +558,18 @@ async def donation_stats():
         "total_donations": row["cnt"],
         "total_amount": f"{row['total']:.2f}",
         "total_donors": donors["cnt"],
-        "recent": [dict(r) for r in recent],
+        "recent": [
+            {**dict(r), "donor_name": html.escape(r["donor_name"] or ""), "message": html.escape(r["message"] or "")}
+            for r in recent
+        ],
     }
 
 
 @app.get("/api/donations")
-async def list_donations():
+async def list_donations(request: Request):
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if not ADMIN_TOKEN or token != ADMIN_TOKEN:
+        raise HTTPException(403, "Unauthorized")
     conn = get_db()
     rows = conn.execute(
         "SELECT id, donor_name, amount, currency, status, message, created_at, completed_at FROM donations ORDER BY created_at DESC LIMIT 100"
@@ -514,7 +580,47 @@ async def list_donations():
 
 @app.post("/api/webhooks/paypal")
 async def paypal_webhook(request: Request):
-    """Receive PayPal webhook notifications."""
+    """Receive PayPal webhook notifications with signature verification."""
+    # Verify webhook signature if WEBHOOK_ID is configured
+    if PAYPAL_WEBHOOK_ID:
+        try:
+            headers_to_verify = {
+                "auth_algo": request.headers.get("paypal-auth-algo", ""),
+                "cert_url": request.headers.get("paypal-cert-url", ""),
+                "transmission_id": request.headers.get("paypal-transmission-id", ""),
+                "transmission_sig": request.headers.get("paypal-transmission-sig", ""),
+                "transmission_time": request.headers.get("paypal-transmission-time", ""),
+            }
+            if not all(headers_to_verify.values()):
+                log.warning("Webhook missing PayPal signature headers")
+                raise HTTPException(401, "Missing signature headers")
+
+            raw_body = await request.body()
+            verify_payload = {
+                "auth_algo": headers_to_verify["auth_algo"],
+                "cert_url": headers_to_verify["cert_url"],
+                "transmission_id": headers_to_verify["transmission_id"],
+                "transmission_sig": headers_to_verify["transmission_sig"],
+                "transmission_time": headers_to_verify["transmission_time"],
+                "webhook_id": PAYPAL_WEBHOOK_ID,
+                "webhook_event": raw_body.decode(),
+            }
+            pp_headers = await paypal_headers()
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{PAYPAL_API}/v1/notifications/verify-webhook-signature",
+                    json=verify_payload,
+                    headers=pp_headers,
+                )
+                if resp.status_code != 200 or resp.json().get("verification_status") != "SUCCESS":
+                    log.warning("Webhook signature verification failed")
+                    raise HTTPException(401, "Invalid webhook signature")
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.error("Webhook verification error: %s", e)
+            raise HTTPException(401, "Webhook verification failed")
+
     body = await request.json()
     event_type = body.get("event_type", "")
     resource = body.get("resource", {})
@@ -556,4 +662,5 @@ async def health():
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    host = os.getenv("HOST", "100.102.16.53")
+    uvicorn.run(app, host=host, port=PORT)
